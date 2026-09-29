@@ -44,7 +44,7 @@ export default function AdminSidebar() {
   return (
     <aside className="w-full lg:w-64 bg-white border border-slate-200 text-slate-800 rounded-[1.25rem] p-5 shadow-sm h-fit lg:sticky lg:top-8">
       <div className="mb-6 px-1">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 mb-0.5">Diyatha POS</p>
+        <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 mb-0.5">Port City Republic</p>
         <h2 className="text-xl font-bold tracking-tight text-slate-900 mb-1">
           {isVendor ? 'Vendor Panel' : 'Admin Panel'}
         </h2>

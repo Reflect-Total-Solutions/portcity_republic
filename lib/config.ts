@@ -76,7 +76,7 @@ function loadConfig(): Config {
     | 'development'
     | 'production'
     | 'test';
-  const appName = process.env.NEXT_PUBLIC_APP_NAME || 'Diyatha POS';
+  const appName = process.env.NEXT_PUBLIC_APP_NAME || 'Port City Republic';
 
   if (missingVars.length > 0) {
     const errorMsg = `Missing required environment variables:\n${missingVars.map((v) => `  - ${v}`).join('\n')}`;

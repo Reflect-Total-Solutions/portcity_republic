@@ -152,7 +152,7 @@ export default function TicketPreview({ open, tickets, onClose }: TicketPreviewP
               <div className="mb-0 mt-9 flex w-full flex-col items-center justify-center">
                 <Image
                   src="/logo/logo.png"
-                  alt="Diyatha POS"
+                  alt="Port City Republic"
                   width={220}
                   height={100}
                   className="h-auto w-full max-w-[220px] object-contain grayscale"
