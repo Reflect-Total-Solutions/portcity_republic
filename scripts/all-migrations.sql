@@ -1,4 +1,8 @@
-﻿-- ============ 001_create_auth_tables.sql ============
+-- Port City Republic - Complete Database Schema
+
+-- ============================================
+-- Migration: 001_create_auth_tables.sql
+-- ============================================
 -- 001_create_auth_tables.sql
 -- Foundation tables and shared trigger helpers.
 
@@ -47,8 +51,9 @@ before update on public.users
 for each row
 execute function public.set_updated_at();
 
-
--- ============ 002_create_categories.sql ============
+-- ============================================
+-- Migration: 002_create_categories.sql
+-- ============================================
 -- 002_create_categories.sql
 
 create table if not exists public.categories (
@@ -69,8 +74,9 @@ before update on public.categories
 for each row
 execute function public.set_updated_at();
 
-
--- ============ 003_create_activities.sql ============
+-- ============================================
+-- Migration: 003_create_activities.sql
+-- ============================================
 -- 003_create_activities.sql
 
 create table if not exists public.activities (
@@ -104,8 +110,9 @@ before update on public.activities
 for each row
 execute function public.set_updated_at();
 
-
--- ============ 004_create_transaction_groups.sql ============
+-- ============================================
+-- Migration: 004_create_transaction_groups.sql
+-- ============================================
 -- 004_create_transaction_groups.sql
 
 create table if not exists public.transaction_groups (
@@ -125,8 +132,9 @@ create index if not exists idx_transaction_groups_cashier_id
 create index if not exists idx_transaction_groups_started_at_desc
   on public.transaction_groups(started_at desc);
 
-
--- ============ 005_create_transactions.sql ============
+-- ============================================
+-- Migration: 005_create_transactions.sql
+-- ============================================
 -- 005_create_transactions.sql
 
 do $$
@@ -186,8 +194,9 @@ before update on public.transactions
 for each row
 execute function public.set_updated_at();
 
-
--- ============ 006_create_tokens.sql ============
+-- ============================================
+-- Migration: 006_create_tokens.sql
+-- ============================================
 -- 006_create_tokens.sql
 
 create table if not exists public.tokens (
@@ -213,8 +222,9 @@ create index if not exists idx_tokens_transaction_id
 create index if not exists idx_tokens_token_number
   on public.tokens(token_number);
 
-
--- ============ 007_create_audit_log.sql ============
+-- ============================================
+-- Migration: 007_create_audit_log.sql
+-- ============================================
 -- 007_create_audit_log.sql
 
 create table if not exists public.audit_log (
@@ -234,8 +244,9 @@ create index if not exists idx_audit_log_created_at_desc
 create index if not exists idx_audit_log_user_id
   on public.audit_log(user_id);
 
-
--- ============ 008_create_error_logs.sql ============
+-- ============================================
+-- Migration: 008_create_error_logs.sql
+-- ============================================
 -- 008_create_error_logs.sql
 
 create table if not exists public.error_logs (
@@ -253,8 +264,9 @@ create index if not exists idx_error_logs_created_at_desc
 create index if not exists idx_error_logs_user_id
   on public.error_logs(user_id);
 
-
--- ============ 009_create_printer_status_cache.sql ============
+-- ============================================
+-- Migration: 009_create_printer_status_cache.sql
+-- ============================================
 -- 009_create_printer_status_cache.sql
 
 create table if not exists public.printer_status_cache (
@@ -280,8 +292,9 @@ before update on public.printer_status_cache
 for each row
 execute function public.set_updated_at();
 
-
--- ============ 010_setup_sequences_and_functions.sql ============
+-- ============================================
+-- Migration: 010_setup_sequences_and_functions.sql
+-- ============================================
 -- 010_setup_sequences_and_functions.sql
 
 create sequence if not exists public.daily_token_seq
@@ -324,8 +337,9 @@ as $$
   alter sequence public.daily_token_seq restart with 1;
 $$;
 
-
--- ============ 011_create_materialized_view.sql ============
+-- ============================================
+-- Migration: 011_create_materialized_view.sql
+-- ============================================
 -- 011_create_materialized_view.sql
 
 drop materialized view if exists public.daily_summary;
@@ -351,8 +365,9 @@ create or replace view public.daily_summary as
 
 -- (Indexes not supported on regular views unless it's materialized, so we can ignore or recreate on the underlying tables if needed)
 
-
--- ============ 012_setup_rls_policies.sql ============
+-- ============================================
+-- Migration: 012_setup_rls_policies.sql
+-- ============================================
 -- 012_setup_rls_policies.sql
 
 -- Enable Row Level Security
@@ -570,8 +585,9 @@ create policy "admin_manage_printer_status"
   using (auth.jwt() ->> 'role' = 'admin')
   with check (auth.jwt() ->> 'role' = 'admin');
 
-
--- ============ 013_add_activity_images.sql ============
+-- ============================================
+-- Migration: 013_add_activity_images.sql
+-- ============================================
 -- 013_add_activity_images.sql
 
 -- 1. Add image_url to activities table
@@ -621,8 +637,9 @@ create policy "admin_delete_activity_images"
     and (auth.jwt() -> 'app_metadata' ->> 'role' = 'admin' OR auth.jwt() -> 'user_metadata' ->> 'role' = 'admin' OR auth.jwt() ->> 'role' = 'admin')
   );
 
-
--- ============ 014_add_payment_methods.sql ============
+-- ============================================
+-- Migration: 014_add_payment_methods.sql
+-- ============================================
 -- 014_add_payment_methods.sql
 
 -- Add payment_method enum and column to transaction_groups and transactions tables
@@ -669,8 +686,9 @@ create or replace view public.daily_summary as
 -- Notify PostgREST to reload schema
 notify pgrst, 'reload schema';
 
-
--- ============ 015_add_exchange_support.sql ============
+-- ============================================
+-- Migration: 015_add_exchange_support.sql
+-- ============================================
 -- Add linkage columns to support exchanges
 ALTER TABLE public.transactions 
   ADD COLUMN exchanged_to_transaction_id uuid REFERENCES public.transactions(id),
@@ -680,8 +698,9 @@ ALTER TABLE public.transactions
 CREATE INDEX idx_transactions_exchanged_to ON public.transactions(exchanged_to_transaction_id);
 CREATE INDEX idx_transactions_exchanged_from ON public.transactions(exchanged_from_transaction_id);
 
-
--- ============ 015_add_vendor_role.sql ============
+-- ============================================
+-- Migration: 015_add_vendor_role.sql
+-- ============================================
 -- Add 'vendor' to user_role enum
 ALTER TYPE public.user_role ADD VALUE IF NOT EXISTS 'vendor';
 
@@ -754,13 +773,15 @@ CREATE POLICY "vendor_read_own_tokens"
     )
   );
 
-
--- ============ 016_add_deleted_at_to_activities.sql ============
+-- ============================================
+-- Migration: 016_add_deleted_at_to_activities.sql
+-- ============================================
 -- Add deleted_at column to activities for soft deleting
 ALTER TABLE public.activities ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
 
-
--- ============ 016_create_exchange_transaction_rpc.sql ============
+-- ============================================
+-- Migration: 016_create_exchange_transaction_rpc.sql
+-- ============================================
 -- 016_create_exchange_transaction_rpc.sql
 --
 -- Atomic ticket exchange. The entire flow (validate, insert new txn, cancel
@@ -975,8 +996,9 @@ begin
 end;
 $$;
 
-
--- ============ 017_add_is_exchanged_flag.sql ============
+-- ============================================
+-- Migration: 017_add_is_exchanged_flag.sql
+-- ============================================
 -- 017_add_is_exchanged_flag.sql
 --
 -- Adds an explicit `is_exchanged` boolean to transactions so a ticket
@@ -993,8 +1015,9 @@ where (exchanged_to_transaction_id is not null
        or exchanged_from_transaction_id is not null)
   and is_exchanged = false;
 
-
--- ============ 018_add_activity_report_rpc.sql ============
+-- ============================================
+-- Migration: 018_add_activity_report_rpc.sql
+-- ============================================
 -- 018_add_activity_report_rpc.sql
 --
 -- Aggregates daily_summary into one row per activity so the result set is
@@ -1043,8 +1066,9 @@ as $$
   order by total_amount desc;
 $$;
 
-
--- ============ 019_add_cashier_report_rpc.sql ============
+-- ============================================
+-- Migration: 019_add_cashier_report_rpc.sql
+-- ============================================
 -- 019_add_cashier_report_rpc.sql
 --
 -- Returns aggregated cashier report data with activity breakdown.
@@ -1102,8 +1126,9 @@ as $$
   order by ds.cashier_id, total_amount desc;
 $$;
 
-
--- ============ 020_atomic_bulk_checkout.sql ============
+-- ============================================
+-- Migration: 020_atomic_bulk_checkout.sql
+-- ============================================
 -- 020_atomic_bulk_checkout.sql
 --
 -- Fixes duplicate-ticket and group-merging bugs:
@@ -1304,8 +1329,9 @@ grant execute on function public.bulk_checkout(public.payment_method_type, jsonb
 
 notify pgrst, 'reload schema';
 
-
--- ============ 021_set_db_timezone_colombo.sql ============
+-- ============================================
+-- Migration: 021_set_db_timezone_colombo.sql
+-- ============================================
 -- 021_set_db_timezone_colombo.sql
 --
 -- Display-only change: sets the database default timezone so the Supabase SQL
@@ -1323,8 +1349,9 @@ notify pgrst, 'reload schema';
 
 alter database postgres set timezone to 'Asia/Colombo';
 
-
--- ============ 022_add_pos_transaction_indexes.sql ============
+-- ============================================
+-- Migration: 022_add_pos_transaction_indexes.sql
+-- ============================================
 -- 022_add_pos_transaction_indexes.sql
 --
 -- Speeds up the POS dashboard transaction-history query
@@ -1336,9 +1363,9 @@ alter database postgres set timezone to 'Asia/Colombo';
 -- The admin dashboard is unaffected because it does not filter by cashier.
 --
 -- PROD-SAFE APPLY NOTES:
---   * Uses CREATE INDEX so existing rows stay writable
+--   * Uses CREATE INDEX CONCURRENTLY so existing rows stay writable
 --     (no INSERT/UPDATE lock) while the index builds. Sales are not blocked.
---   * cannot run inside a transaction block. Apply this file
+--   * CONCURRENTLY cannot run inside a transaction block. Apply this file
 --     directly (Supabase SQL editor, `psql`, or the Supabase MCP), NOT via a
 --     runner that wraps each migration in BEGIN/COMMIT.
 --   * Nothing here drops tables, deletes, or rewrites data.
@@ -1349,8 +1376,9 @@ alter database postgres set timezone to 'Asia/Colombo';
 create index if not exists idx_transactions_cashier_created_at
   on public.transactions (cashier_id, created_at desc);
 
-
--- ============ 023_add_pos_daily_summary_rpc.sql ============
+-- ============================================
+-- Migration: 023_add_pos_daily_summary_rpc.sql
+-- ============================================
 -- 023_add_pos_daily_summary_rpc.sql
 --
 -- Live per-cashier daily summary for the POS dashboard "Daily Summary" /
@@ -1428,8 +1456,9 @@ $$;
 
 grant execute on function public.get_pos_daily_summary(uuid, timestamptz, timestamptz) to authenticated;
 
-
--- ============ 024_optimize_database_performance.sql ============
+-- ============================================
+-- Migration: 024_optimize_database_performance.sql
+-- ============================================
 -- 024_optimize_database_performance.sql
 --
 -- Performance optimizations for high-volume POS transactions & fast multi-day search:
@@ -1588,8 +1617,9 @@ CREATE POLICY "admin_read_all_tokens"
   ON public.tokens FOR SELECT
   USING ((SELECT auth.jwt() ->> 'role') = 'admin');
 
-
--- ============ 025_fix_rls_admin_policies.sql ============
+-- ============================================
+-- Migration: 025_fix_rls_admin_policies.sql
+-- ============================================
 -- 025_fix_rls_admin_policies.sql
 --
 -- Fixes RLS policies where `auth.jwt() ->> 'role' = 'admin'` was used.
@@ -1716,9 +1746,3 @@ DROP POLICY IF EXISTS "admin_read_error_logs" ON public.error_logs;
 CREATE POLICY "admin_read_error_logs"
   ON public.error_logs FOR SELECT
   USING (public.is_admin());
-
-
--- ============ SEED ADMIN ============
-INSERT INTO public.users (id, email, role, display_name, is_active)
-VALUES ('f7a6aed9-f5d4-4f78-8708-636ec0c30ece', 'admin@gmail.com', 'admin', 'Admin', true)
-ON CONFLICT (id) DO UPDATE SET role = 'admin', display_name = 'Admin', is_active = true;

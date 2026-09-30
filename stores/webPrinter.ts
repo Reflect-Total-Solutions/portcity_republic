@@ -42,7 +42,7 @@ function buildPrintData(ticket: any): Uint8Array {
 
   let data = init;
   data += alignCenter + "\n\n"; 
-  data += boldOn + "DIYATHA POS\n" + boldOff;
+  data += boldOn + "PORT CITY REPUBLIC\n" + boldOff;
   data += heavyLine;
   data += boldOn + (ticket.activityName + " TOKEN\n").toUpperCase();
   data += normalSize + (ticket.token_number || 'N/A') + "\n";

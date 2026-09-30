@@ -14,7 +14,7 @@ import { createClient } from '@supabase/supabase-js';
 
 /* ---------- configuration ---------- */
 const ADMIN_EMAIL = 'admin@gmail.com';
-const ADMIN_PASSWORD = 'admin@123';
+const ADMIN_PASSWORD = '123123123';
 const ADMIN_DISPLAY_NAME = 'Admin';
 /* ----------------------------------- */
 

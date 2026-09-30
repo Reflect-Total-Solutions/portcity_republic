@@ -53,7 +53,7 @@ function buildTicket(printer: ThermalPrinter, payload: TicketPayload) {
 
   printer.alignCenter();
   printer.bold(true);
-  printer.println('DIYATHA POS');
+  printer.println('PORT CITY REPUBLIC');
   printer.bold(false);
   printer.println('Hotline: 0776569718');
 
