@@ -65,35 +65,38 @@ export async function POST(
     }
 
     // 2. Fetch original token number to preserve it across exchanges
-    const { data: existingTokenData } = await supabaseServer
+    const { data: rawExistingToken } = await supabaseServer
       .from('tokens')
       .select('token_number')
       .eq('transaction_id', transactionId)
       .maybeSingle();
 
+    const existingTokenData = rawExistingToken as { token_number: string } | null;
     let tokenNumber = existingTokenData?.token_number;
 
     // Fallback: If not directly on this transaction, traverse exchange chain back to root
     if (!tokenNumber && original.exchanged_from_transaction_id) {
       let currentFromId: string | null = original.exchanged_from_transaction_id;
       while (currentFromId && !tokenNumber) {
-        const { data: parentToken } = await supabaseServer
+        const { data: rawParentToken } = await supabaseServer
           .from('tokens')
           .select('token_number')
           .eq('transaction_id', currentFromId)
           .maybeSingle();
 
+        const parentToken = rawParentToken as { token_number: string } | null;
         if (parentToken?.token_number) {
           tokenNumber = parentToken.token_number;
           break;
         }
 
-        const { data: parentTxn } = await supabaseServer
+        const { data: rawParentTxn } = await supabaseServer
           .from('transactions')
           .select('exchanged_from_transaction_id')
           .eq('id', currentFromId)
           .maybeSingle();
 
+        const parentTxn = rawParentTxn as { exchanged_from_transaction_id: string | null } | null;
         currentFromId = parentTxn?.exchanged_from_transaction_id ?? null;
       }
     }
