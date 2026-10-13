@@ -19,6 +19,7 @@ export type PrintedTicket = {
   cashierName: string;
   created_at: string;
   txn_reference: string;
+  isExchanged?: boolean;
 };
 
 type TicketPreviewProps = {
@@ -174,6 +175,11 @@ export default function TicketPreview({ open, tickets, onClose }: TicketPreviewP
               <div className="text-center font-bold text-[14px] mt-1 tracking-widest">
                 {ticket.token_number || 'N/A'}
               </div>
+              {ticket.isExchanged && (
+                <div className="mt-1 text-center font-black tracking-widest text-[13px] border-2 border-black px-2 py-0.5 uppercase">
+                  ** EXCHANGED **
+                </div>
+              )}
 
               <div className="w-full border-b-[2px] border-dashed border-black my-4"></div>
 

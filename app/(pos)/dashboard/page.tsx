@@ -9,6 +9,7 @@ import PaymentConfirmation from '@/components/pos/PaymentConfirmation';
 import PricingToggle from '@/components/pos/PricingToggle';
 import TicketPreview, { type PrintedTicket } from '@/components/pos/TicketPreview';
 import TransactionHistory from '@/components/pos/TransactionHistory';
+import TodayTicketsModal, { type TodayTicketItem } from '@/components/pos/TodayTicketsModal';
 import { Button } from '@/components/ui/button';
 import { useActivities } from '@/hooks/useActivities';
 import { useAuth } from '@/hooks/useAuth';
@@ -114,7 +115,9 @@ export default function DashboardPage() {
   const idempotencyKeyRef = useRef<string | null>(null);
 
   // Exchange state
+  const [isTodayTicketsOpen, setIsTodayTicketsOpen] = useState(false);
   const [exchangeTxnId, setExchangeTxnId] = useState<string | null>(null);
+  const [exchangeSelectedTicket, setExchangeSelectedTicket] = useState<TodayTicketItem | null>(null);
   const [exchangeTargetActivityId, setExchangeTargetActivityId] = useState<string | null>(null);
   const [exchangeMode, setExchangeMode] = useState<'swap' | ExchangeSplitOption>('swap');
   const [splitActivityIds, setSplitActivityIds] = useState<(string | null)[]>([]);
@@ -358,8 +361,14 @@ export default function DashboardPage() {
     setCancellingTransactionId(null);
   }
 
-  function handleOpenExchangeModal(transactionId: string) {
+  function handleOpenExchangeModal(transactionId: string, ticketObj?: TodayTicketItem) {
     setExchangeTxnId(transactionId);
+    if (ticketObj) {
+      setExchangeSelectedTicket(ticketObj);
+    } else {
+      const found = transactions.find((t) => t.id === transactionId);
+      setExchangeSelectedTicket(found ?? null);
+    }
     setExchangeTargetActivityId(null);
     setExchangeMode('swap');
     setSplitActivityIds([]);
@@ -367,6 +376,7 @@ export default function DashboardPage() {
 
   function handleCloseExchangeModal() {
     setExchangeTxnId(null);
+    setExchangeSelectedTicket(null);
     setExchangeTargetActivityId(null);
     setExchangeMode('swap');
     setSplitActivityIds([]);
@@ -430,7 +440,7 @@ export default function DashboardPage() {
             : 'The ticket was successfully exchanged.',
         });
 
-        setPreviewTickets(newTxns.map((t) => ({
+        const ticketsToPreview: PrintedTicket[] = newTxns.map((t) => ({
           id: t.id,
           token_number: t.token_number,
           token_index: t.token_index,
@@ -441,7 +451,37 @@ export default function DashboardPage() {
           cashierName: user?.display_name ?? 'Staff',
           created_at: t.created_at,
           txn_reference: t.txn_reference,
-        })));
+          isExchanged: true,
+        }));
+
+        setPreviewTickets(ticketsToPreview);
+
+        // Auto print through thermal printer if interface configured
+        const savedInterface = localStorage.getItem('carnival-printer-interface')?.trim();
+        if (savedInterface) {
+          (async () => {
+            try {
+              for (const ticket of ticketsToPreview) {
+                await fetch('/api/print', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    transaction_id: ticket.id,
+                    targetInterface: savedInterface,
+                  }),
+                });
+                await new Promise((r) => setTimeout(r, 250));
+              }
+              pushNotification({
+                type: 'success',
+                title: 'Printed Exchanged Ticket',
+                message: `Bill printed directly to ${savedInterface}`,
+              });
+            } catch (printErr: any) {
+              console.error('Auto print exchanged ticket failed:', printErr);
+            }
+          })();
+        }
 
         handleCloseExchangeModal();
         void refetchTransactions();
@@ -475,6 +515,15 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            onClick={() => setIsTodayTicketsOpen(true)}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-bold text-white shadow-md hover:bg-blue-700 transition-colors"
+          >
+            <span>🔄</span>
+            <span>Exchange Ticket</span>
+          </Button>
+
           <Link
             href="/logout"
             className="inline-flex h-11 items-center justify-center rounded-lg border-2 border-slate-400 px-4 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100"
@@ -777,8 +826,18 @@ export default function DashboardPage() {
         }}
       />
 
+      <TodayTicketsModal
+        open={isTodayTicketsOpen}
+        onClose={() => setIsTodayTicketsOpen(false)}
+        activitiesById={activityById}
+        onSelectTicketToExchange={(transactionId) => {
+          setIsTodayTicketsOpen(false);
+          handleOpenExchangeModal(transactionId);
+        }}
+      />
+
       {exchangeTxnId && (() => {
-        const originalTxn = transactions.find(t => t.id === exchangeTxnId);
+        const originalTxn = transactions.find(t => t.id === exchangeTxnId) || exchangeSelectedTicket;
         const availableSplitOptions = originalTxn
           ? (Object.keys(EXCHANGE_SPLIT_TEMPLATES) as ExchangeSplitOption[]).filter(
               (option) => EXCHANGE_SPLIT_TEMPLATES[option].forAmount === Number(originalTxn.amount)

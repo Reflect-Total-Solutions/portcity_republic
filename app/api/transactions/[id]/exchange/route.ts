@@ -57,18 +57,60 @@ export async function POST(
         { status: 400 }
       );
     }
-    if (
-      original.is_exchanged ||
-      original.exchanged_to_transaction_id ||
-      original.exchanged_from_transaction_id
-    ) {
+    if (original.exchanged_to_transaction_id) {
       return NextResponse.json(
         { error: 'This transaction has already been exchanged' },
         { status: 400 }
       );
     }
 
-    // 2. Fetch + validate new activity
+    // 2. Fetch original token number to preserve it across exchanges
+    const { data: existingTokenData } = await supabaseServer
+      .from('tokens')
+      .select('token_number')
+      .eq('transaction_id', transactionId)
+      .maybeSingle();
+
+    let tokenNumber = existingTokenData?.token_number;
+
+    // Fallback: If not directly on this transaction, traverse exchange chain back to root
+    if (!tokenNumber && original.exchanged_from_transaction_id) {
+      let currentFromId: string | null = original.exchanged_from_transaction_id;
+      while (currentFromId && !tokenNumber) {
+        const { data: parentToken } = await supabaseServer
+          .from('tokens')
+          .select('token_number')
+          .eq('transaction_id', currentFromId)
+          .maybeSingle();
+
+        if (parentToken?.token_number) {
+          tokenNumber = parentToken.token_number;
+          break;
+        }
+
+        const { data: parentTxn } = await supabaseServer
+          .from('transactions')
+          .select('exchanged_from_transaction_id')
+          .eq('id', currentFromId)
+          .maybeSingle();
+
+        currentFromId = parentTxn?.exchanged_from_transaction_id ?? null;
+      }
+    }
+
+    // If still no token number found, generate one as safeguard
+    if (!tokenNumber) {
+      const tokenNumberResult = await supabaseServer.rpc('generate_token_number');
+      tokenNumber = tokenNumberResult.data as unknown as string | null;
+      if (!tokenNumber) {
+        return NextResponse.json(
+          { error: 'Unable to generate token number' },
+          { status: 500 }
+        );
+      }
+    }
+
+    // 3. Fetch + validate new activity
     const { data: rawActivity, error: actError } = await supabaseServer
       .from('activities')
       .select('*')
@@ -102,7 +144,7 @@ export async function POST(
       );
     }
 
-    // 3. Generate reference + token via existing helpers
+    // 4. Generate reference via existing helpers
     const txnRefResult = await supabaseServer.rpc('generate_txn_reference', { suffix: 'E' } as never);
     const txnReference = txnRefResult.data as unknown as string | null;
     if (!txnReference) {
@@ -112,16 +154,7 @@ export async function POST(
       );
     }
 
-    const tokenNumberResult = await supabaseServer.rpc('generate_token_number');
-    const tokenNumber = tokenNumberResult.data as unknown as string | null;
-    if (!tokenNumber) {
-      return NextResponse.json(
-        { error: 'Unable to generate token number' },
-        { status: 500 }
-      );
-    }
-
-    // 4. Insert new transaction (token_index/total left null → resequence sets them)
+    // 5. Insert new transaction (token_index/total left null → resequence sets them)
     const { data: rawNew, error: insertErr } = await supabaseServer
       .from('transactions')
       .insert({
@@ -133,7 +166,7 @@ export async function POST(
         txn_reference: txnReference,
         print_status: 'pending',
         exchanged_from_transaction_id: transactionId,
-        is_exchanged: true,
+        is_exchanged: false,
       } as any)
       .select()
       .single();
@@ -149,8 +182,22 @@ export async function POST(
 
     // Rollback helpers — track what committed so we can undo in reverse.
     let originalMutated = false;
+    let tokenReassigned = false;
     const rollback = async (stage: string, err: unknown) => {
       console.error(`Exchange: rollback at ${stage}:`, err);
+      if (tokenReassigned) {
+        await supabaseServer
+          .from('tokens')
+          .update({
+            transaction_id: transactionId,
+          } as never)
+          .eq('token_number', tokenNumber);
+      } else {
+        await supabaseServer
+          .from('tokens')
+          .delete()
+          .eq('transaction_id', newTxn.id);
+      }
       if (originalMutated) {
         await supabaseServer
           .from('transactions')
@@ -164,7 +211,7 @@ export async function POST(
       await supabaseServer.from('transactions').delete().eq('id', newTxn.id);
     };
 
-    // 5. Cancel original + flag + link to replacement
+    // 6. Cancel original + flag + link to replacement
     const { error: cancelErr } = await supabaseServer
       .from('transactions')
       .update({
@@ -183,7 +230,7 @@ export async function POST(
     }
     originalMutated = true;
 
-    // 6. Resequence the active siblings (cancelled original is now excluded)
+    // 7. Resequence the active siblings (cancelled original is now excluded)
     let sequenced;
     try {
       sequenced = await resequenceGroupTransactions(
@@ -210,23 +257,45 @@ export async function POST(
       );
     }
 
-    // 7. Insert token row
-    const { error: tokenErr } = await supabaseServer
-      .from('tokens')
-      .insert({
-        transaction_id: newTxn.id,
-        token_number: tokenNumber,
-        token_index: tokenIndex,
-        token_total: tokenTotal,
-        printed_at: new Date().toISOString(),
-      } as any);
+    // 8. Reassign existing token row to new transaction (preserving exact token number)
+    // or insert if this token row didn't exist yet
+    if (existingTokenData) {
+      const { error: tokenUpdateErr } = await supabaseServer
+        .from('tokens')
+        .update({
+          transaction_id: newTxn.id,
+          token_index: tokenIndex,
+          token_total: tokenTotal,
+          printed_at: new Date().toISOString(),
+        } as never)
+        .eq('token_number', tokenNumber);
 
-    if (tokenErr) {
-      await rollback('insert-token', tokenErr);
-      return NextResponse.json(
-        { error: 'Failed to create token for exchanged transaction' },
-        { status: 500 }
-      );
+      if (tokenUpdateErr) {
+        await rollback('update-token', tokenUpdateErr);
+        return NextResponse.json(
+          { error: 'Failed to update token for exchanged transaction' },
+          { status: 500 }
+        );
+      }
+      tokenReassigned = true;
+    } else {
+      const { error: tokenErr } = await supabaseServer
+        .from('tokens')
+        .insert({
+          transaction_id: newTxn.id,
+          token_number: tokenNumber,
+          token_index: tokenIndex,
+          token_total: tokenTotal,
+          printed_at: new Date().toISOString(),
+        } as any);
+
+      if (tokenErr) {
+        await rollback('insert-token', tokenErr);
+        return NextResponse.json(
+          { error: 'Failed to create token for exchanged transaction' },
+          { status: 500 }
+        );
+      }
     }
 
     // 8. Audit log — best-effort, must never cause a 500 that loses the
@@ -340,11 +409,7 @@ async function handleSplitExchange(
       { status: 400 }
     );
   }
-  if (
-    original.is_exchanged ||
-    original.exchanged_to_transaction_id ||
-    original.exchanged_from_transaction_id
-  ) {
+  if (original.exchanged_to_transaction_id) {
     return NextResponse.json(
       { error: 'This transaction has already been exchanged' },
       { status: 400 }
