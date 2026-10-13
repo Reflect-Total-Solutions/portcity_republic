@@ -72,7 +72,7 @@ export async function POST(
       .maybeSingle();
 
     const existingTokenData = rawExistingToken as { token_number: string } | null;
-    let tokenNumber = existingTokenData?.token_number;
+    let tokenNumber: string | null = existingTokenData?.token_number ?? null;
 
     // Fallback: If not directly on this transaction, traverse exchange chain back to root
     if (!tokenNumber && original.exchanged_from_transaction_id) {
@@ -104,7 +104,7 @@ export async function POST(
     // If still no token number found, generate one as safeguard
     if (!tokenNumber) {
       const tokenNumberResult = await supabaseServer.rpc('generate_token_number');
-      tokenNumber = tokenNumberResult.data as unknown as string | null;
+      tokenNumber = (tokenNumberResult.data as unknown as string | null) ?? null;
       if (!tokenNumber) {
         return NextResponse.json(
           { error: 'Unable to generate token number' },
