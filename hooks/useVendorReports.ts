@@ -7,6 +7,8 @@ import type { ActivityReportRow } from '@/types/report';
 export type VendorReportFilters = {
   from?: string;
   to?: string;
+  startTime?: string;
+  endTime?: string;
 };
 
 type ListResponse<T> = {
@@ -29,6 +31,14 @@ function buildQueryString(filters: VendorReportFilters): string {
 
   if (filters.to) {
     params.set('to', filters.to);
+  }
+
+  if (filters.startTime) {
+    params.set('start_time', filters.startTime);
+  }
+
+  if (filters.endTime) {
+    params.set('end_time', filters.endTime);
   }
 
   const queryString = params.toString();

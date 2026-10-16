@@ -22,18 +22,45 @@ export default function VendorActivityReportPage() {
 
   const [from, setFrom] = useState<string>(getTodayDateValue());
   const [to, setTo] = useState<string>(getTodayDateValue());
+  const [startTime, setStartTime] = useState<string>('');
+  const [endTime, setEndTime] = useState<string>('');
 
-  const filters = useMemo(
-    () => ({
+  const [appliedFilters, setAppliedFilters] = useState<{
+    from: string;
+    to: string;
+    startTime?: string;
+    endTime?: string;
+  }>({
+    from: getTodayDateValue(),
+    to: getTodayDateValue(),
+  });
+
+  const handleApply = () => {
+    const filters = {
       from,
       to,
-    }),
-    [from, to]
-  );
+      startTime: startTime || undefined,
+      endTime: endTime || undefined,
+    };
+    setAppliedFilters(filters);
+    void loadActivityReport(filters);
+  };
+
+  const handleReset = () => {
+    const today = getTodayDateValue();
+    setFrom(today);
+    setTo(today);
+    setStartTime('');
+    setEndTime('');
+    const filters = { from: today, to: today };
+    setAppliedFilters(filters);
+    void loadActivityReport(filters);
+  };
 
   useEffect(() => {
-    void loadActivityReport(filters);
-  }, [filters, loadActivityReport]);
+    void loadActivityReport(appliedFilters);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const totalRevenue = useMemo(() => {
     return activity.reduce((sum, row) => sum + row.total_amount, 0);
@@ -55,7 +82,7 @@ export default function VendorActivityReportPage() {
 
         <div className="flex flex-wrap items-end gap-2">
           <label className="flex flex-col gap-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-            From
+            From Date
             <input
               type="date"
               value={from}
@@ -65,7 +92,7 @@ export default function VendorActivityReportPage() {
           </label>
 
           <label className="flex flex-col gap-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-            To
+            To Date
             <input
               type="date"
               value={to}
@@ -74,19 +101,47 @@ export default function VendorActivityReportPage() {
             />
           </label>
 
+          <label className="flex flex-col gap-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            Start Time
+            <input
+              type="time"
+              value={startTime}
+              onChange={(event) => setStartTime(event.target.value)}
+              className="h-9 rounded-md border border-slate-300 px-3 text-sm text-slate-900"
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            End Time
+            <input
+              type="time"
+              value={endTime}
+              onChange={(event) => setEndTime(event.target.value)}
+              className="h-9 rounded-md border border-slate-300 px-3 text-sm text-slate-900"
+            />
+          </label>
+
           <Button
             type="button"
-            variant="outline"
-            onClick={() => void loadActivityReport(filters)}
+            onClick={handleApply}
             disabled={isLoading}
           >
-            Refresh
+            {isLoading ? 'Loading…' : 'Generate'}
           </Button>
 
           <Button
             type="button"
             variant="outline"
-            onClick={() => void exportReport('xlsx', filters)}
+            onClick={handleReset}
+            disabled={isLoading}
+          >
+            Reset
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void exportReport('xlsx', appliedFilters)}
             disabled={isExporting || isLoading}
           >
             Export XLSX
@@ -94,13 +149,23 @@ export default function VendorActivityReportPage() {
 
           <Button
             type="button"
-            onClick={() => void exportReport('pdf', filters)}
+            onClick={() => void exportReport('pdf', appliedFilters)}
             disabled={isExporting || isLoading}
           >
             Export PDF
           </Button>
         </div>
       </div>
+
+      {appliedFilters.startTime || appliedFilters.endTime ? (
+        <div className="mt-3 flex items-center gap-2 text-xs text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 w-fit">
+          <span className="font-semibold text-slate-700">Active Window:</span>
+          <span>
+            {appliedFilters.from} {appliedFilters.startTime || '00:00'} → {appliedFilters.to}{' '}
+            {appliedFilters.endTime || '23:59'} (Colombo Time)
+          </span>
+        </div>
+      ) : null}
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-2 mt-6">
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">

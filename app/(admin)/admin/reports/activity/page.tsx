@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { formatInTimeZone } from 'date-fns-tz';
 import { Button } from '@/components/ui/button';
@@ -23,34 +23,140 @@ export default function ActivityReportPage() {
 
   const [from, setFrom] = useState<string>(getTodayDateValue());
   const [to, setTo] = useState<string>(getTodayDateValue());
+  const [startTime, setStartTime] = useState<string>('');
+  const [endTime, setEndTime] = useState<string>('');
   const [activityId, setActivityId] = useState('');
+  const [activitiesList, setActivitiesList] = useState<Array<{ id: string; name: string }>>([]);
 
-  const filters = useMemo(
-    () => ({
+  // Fetch list of activities for dropdown
+  useEffect(() => {
+    async function fetchActivities() {
+      try {
+        const res = await fetch('/api/activities?limit=100');
+        if (res.ok) {
+          const json = await res.json();
+          setActivitiesList(json.data ?? []);
+        }
+      } catch {
+        // ignore error
+      }
+    }
+    void fetchActivities();
+  }, []);
+
+  const [appliedFilters, setAppliedFilters] = useState<{
+    from: string;
+    to: string;
+    startTime?: string;
+    endTime?: string;
+    activityId?: string;
+  }>({
+    from: getTodayDateValue(),
+    to: getTodayDateValue(),
+  });
+
+  const handleApply = useCallback(() => {
+    const filters = {
       from,
       to,
+      startTime: startTime || undefined,
+      endTime: endTime || undefined,
       activityId: activityId || undefined,
-    }),
-    [activityId, from, to]
-  );
-
-  useEffect(() => {
+    };
+    setAppliedFilters(filters);
     void loadActivityReport(filters);
-  }, [filters, loadActivityReport]);
+  }, [activityId, endTime, from, loadActivityReport, startTime, to]);
+
+  const handleReset = useCallback(() => {
+    const today = getTodayDateValue();
+    setFrom(today);
+    setTo(today);
+    setStartTime('');
+    setEndTime('');
+    setActivityId('');
+    const filters = {
+      from: today,
+      to: today,
+    };
+    setAppliedFilters(filters);
+    void loadActivityReport(filters);
+  }, [loadActivityReport]);
+
+  const handleSetShiftPreset = useCallback(() => {
+    setStartTime('16:00');
+    setEndTime('02:00');
+  }, []);
+
+  const handleClearTimes = useCallback(() => {
+    setStartTime('');
+    setEndTime('');
+  }, []);
+
+  // Initial load
+  useEffect(() => {
+    void loadActivityReport(appliedFilters);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const totals = useMemo(() => {
+    return activity.reduce(
+      (acc, row) => ({
+        local_count: acc.local_count + row.local_count,
+        foreign_count: acc.foreign_count + row.foreign_count,
+        total_count: acc.total_count + row.total_count,
+        local_total: acc.local_total + row.local_total,
+        foreign_total: acc.foreign_total + row.foreign_total,
+        total_amount: acc.total_amount + row.total_amount,
+      }),
+      {
+        local_count: 0,
+        foreign_count: 0,
+        total_count: 0,
+        local_total: 0,
+        foreign_total: 0,
+        total_amount: 0,
+      }
+    );
+  }, [activity]);
 
   return (
     <div>
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-slate-900">Activity Report</h2>
-          <p className="mt-1 text-sm text-slate-600">
-            Revenue and count distribution by activity.
-          </p>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-1 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-slate-900">Activity Report</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Revenue and count distribution by activity. Filter by date range and operating hours.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleSetShiftPreset}
+              className="text-xs"
+            >
+              Preset: Shift (16:00 - 02:00)
+            </Button>
+            {(startTime || endTime) && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleClearTimes}
+                className="text-xs text-slate-500 hover:text-slate-900"
+              >
+                Clear Times
+              </Button>
+            )}
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-end gap-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-7 items-end">
           <label className="flex flex-col gap-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-            From
+            From Date
             <input
               type="date"
               value={from}
@@ -60,7 +166,7 @@ export default function ActivityReportPage() {
           </label>
 
           <label className="flex flex-col gap-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-            To
+            To Date
             <input
               type="date"
               value={to}
@@ -70,43 +176,90 @@ export default function ActivityReportPage() {
           </label>
 
           <label className="flex flex-col gap-1 text-xs font-medium uppercase tracking-wide text-slate-500">
-            Activity ID (optional)
+            Start Time
             <input
-              type="text"
-              value={activityId}
-              onChange={(event) => setActivityId(event.target.value)}
-              placeholder="UUID"
-              className="h-9 w-44 rounded-md border border-slate-300 px-3 text-sm text-slate-900"
+              type="time"
+              value={startTime}
+              onChange={(event) => setStartTime(event.target.value)}
+              className="h-9 rounded-md border border-slate-300 px-3 text-sm text-slate-900"
             />
           </label>
 
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => void loadActivityReport(filters)}
-            disabled={isLoading}
-          >
-            Refresh
-          </Button>
+          <label className="flex flex-col gap-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            End Time
+            <input
+              type="time"
+              value={endTime}
+              onChange={(event) => setEndTime(event.target.value)}
+              className="h-9 rounded-md border border-slate-300 px-3 text-sm text-slate-900"
+            />
+          </label>
 
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => void exportReport('activity', 'xlsx', filters)}
-            disabled={isExporting || isLoading}
-          >
-            Export XLSX
-          </Button>
+          <label className="flex flex-col gap-1 text-xs font-medium uppercase tracking-wide text-slate-500">
+            Activity
+            <select
+              value={activityId}
+              onChange={(event) => setActivityId(event.target.value)}
+              className="h-9 rounded-md border border-slate-300 px-2 text-sm text-slate-900 bg-white"
+            >
+              <option value="">All Activities</option>
+              {activitiesList.map((act) => (
+                <option key={act.id} value={act.id}>
+                  {act.name}
+                </option>
+              ))}
+            </select>
+          </label>
 
-          <Button
-            type="button"
-            onClick={() => void exportReport('activity', 'pdf', filters)}
-            disabled={isExporting || isLoading}
-          >
-            Export PDF
-          </Button>
+          <div className="flex gap-2 lg:col-span-2">
+            <Button
+              type="button"
+              onClick={handleApply}
+              disabled={isLoading}
+              className="flex-1"
+            >
+              {isLoading ? 'Loading…' : 'Generate'}
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleReset}
+              disabled={isLoading}
+            >
+              Reset
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void exportReport('activity', 'xlsx', appliedFilters)}
+              disabled={isExporting || isLoading}
+            >
+              XLSX
+            </Button>
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void exportReport('activity', 'pdf', appliedFilters)}
+              disabled={isExporting || isLoading}
+            >
+              PDF
+            </Button>
+          </div>
         </div>
       </div>
+
+      {appliedFilters.startTime || appliedFilters.endTime ? (
+        <div className="mt-3 flex items-center gap-2 text-xs text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200 w-fit">
+          <span className="font-semibold text-slate-700">Active Window:</span>
+          <span>
+            {appliedFilters.from} {appliedFilters.startTime || '00:00'} → {appliedFilters.to}{' '}
+            {appliedFilters.endTime || '23:59'} (Colombo Time)
+          </span>
+        </div>
+      ) : null}
 
       {error ? (
         <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -150,6 +303,21 @@ export default function ActivityReportPage() {
               </tr>
             ) : null}
           </tbody>
+          {activity.length > 0 ? (
+            <tfoot className="bg-slate-50 font-semibold text-slate-900 border-t-2 border-slate-300">
+              <tr>
+                <td className="px-3 py-2 text-left">Total</td>
+                <td className="px-3 py-2 text-right">{totals.local_count}</td>
+                <td className="px-3 py-2 text-right">{totals.foreign_count}</td>
+                <td className="px-3 py-2 text-right">{totals.total_count}</td>
+                <td className="px-3 py-2 text-right">{totals.local_total.toFixed(2)}</td>
+                <td className="px-3 py-2 text-right">{totals.foreign_total.toFixed(2)}</td>
+                <td className="px-3 py-2 text-right text-emerald-700">
+                  {totals.total_amount.toFixed(2)}
+                </td>
+              </tr>
+            </tfoot>
+          ) : null}
         </table>
       </div>
 

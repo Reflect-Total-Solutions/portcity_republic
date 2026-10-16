@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { computeShiftWindowUtc, formatColomboDateTime } from '@/lib/dateUtils';
+import { computeShiftWindowUtc, formatColomboDate, formatColomboDateTime } from '@/lib/dateUtils';
 import { ForbiddenError, ValidationError } from '@/lib/errors';
 import type { RequestUserContext } from '@/lib/request-user';
 import type { Database } from '@/types/database';
@@ -333,29 +333,159 @@ export async function fetchActivityReportData(
 ): Promise<ActivityReportRow[]> {
   ensureAdminOrVendor(requestUser);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, error } = await (supabase as any).rpc('get_activity_report_data', {
-    p_from:        params.date ?? params.from ?? null,
-    p_to:          params.date ?? params.to   ?? null,
-    p_vendor_id:   requestUser.role === 'vendor' ? requestUser.id : null,
-    p_activity_id: params.activity_id ?? null,
-    p_cashier_id:  params.cashier_id  ?? null,
-  });
+  const hasTimeFilter = Boolean(params.start_time || params.end_time);
 
-  if (error) {
-    throw error;
+  if (!hasTimeFilter) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase as any).rpc('get_activity_report_data', {
+      p_from:        params.date ?? params.from ?? null,
+      p_to:          params.date ?? params.to   ?? null,
+      p_vendor_id:   requestUser.role === 'vendor' ? requestUser.id : null,
+      p_activity_id: params.activity_id ?? null,
+      p_cashier_id:  params.cashier_id  ?? null,
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    return (data ?? []).map((row: Record<string, unknown>) => ({
+      activity_id:   row.activity_id   as string,
+      activity_name: (row.activity_name as string | null) ?? `Activity ${(row.activity_id as string).slice(0, 8)}`,
+      local_count:   toNumber(row.local_count   as number | null),
+      foreign_count: toNumber(row.foreign_count as number | null),
+      total_count:   toNumber(row.total_count   as number | null),
+      local_total:   toNumber(row.local_total   as number | null),
+      foreign_total: toNumber(row.foreign_total as number | null),
+      total_amount:  toNumber(row.total_amount  as number | null),
+    }));
   }
 
-  return (data ?? []).map((row: Record<string, unknown>) => ({
-    activity_id:   row.activity_id   as string,
-    activity_name: (row.activity_name as string | null) ?? `Activity ${(row.activity_id as string).slice(0, 8)}`,
-    local_count:   toNumber(row.local_count   as number | null),
-    foreign_count: toNumber(row.foreign_count as number | null),
-    total_count:   toNumber(row.total_count   as number | null),
-    local_total:   toNumber(row.local_total   as number | null),
-    foreign_total: toNumber(row.foreign_total as number | null),
-    total_amount:  toNumber(row.total_amount  as number | null),
-  }));
+  const fromDate = params.date ?? params.from ?? formatColomboDate(new Date(), 'yyyy-MM-dd');
+  const toDate = params.date ?? params.to ?? fromDate;
+  const startTime = params.start_time ?? '00:00';
+  const endTime = params.end_time ?? '23:59';
+
+  let startUtc: Date;
+  let endUtc: Date;
+  try {
+    const window = computeShiftWindowUtc(fromDate, toDate, startTime, endTime);
+    startUtc = window.startUtc;
+    endUtc = window.endUtc;
+  } catch (err) {
+    throw new ValidationError(
+      err instanceof Error ? err.message : 'Invalid time range: end must be after start.'
+    );
+  }
+
+  // Include transactions right through the final minute of the window
+  const adjustedEndUtc = new Date(endUtc.getTime() + 59 * 1000 + 999);
+
+  let vendorActivityIds: string[] | null = null;
+  if (requestUser.role === 'vendor') {
+    const { data: vActs, error: vError } = await supabase
+      .from('activities')
+      .select('id')
+      .eq('vendor_id', requestUser.id);
+
+    if (vError) throw vError;
+    vendorActivityIds = ((vActs ?? []) as Array<{ id: string }>).map((a) => a.id);
+    if (vendorActivityIds.length === 0) {
+      return [];
+    }
+  }
+
+  const ACTIVITY_PAGE_SIZE = 1000;
+  const ACTIVITY_ROW_CAP = 50000;
+
+  type ActivityTxRow = {
+    activity_id: string;
+    price_type: 'local' | 'foreign';
+    amount: number;
+    cancelled_at: string | null;
+  };
+
+  const activityMap = new Map<string, ActivityReportRow>();
+
+  for (let offset = 0; offset < ACTIVITY_ROW_CAP; offset += ACTIVITY_PAGE_SIZE) {
+    let query = supabase
+      .from('transactions')
+      .select('activity_id, price_type, amount, cancelled_at', { count: 'exact' })
+      .gte('created_at', startUtc.toISOString())
+      .lte('created_at', adjustedEndUtc.toISOString())
+      .is('cancelled_at', null)
+      .range(offset, offset + ACTIVITY_PAGE_SIZE - 1);
+
+    if (requestUser.role === 'vendor' && vendorActivityIds) {
+      query = query.in('activity_id', vendorActivityIds);
+    }
+
+    if (params.activity_id) {
+      query = query.eq('activity_id', params.activity_id);
+    }
+
+    if (params.cashier_id) {
+      query = query.eq('cashier_id', params.cashier_id);
+    }
+
+    const { data, error, count } = await query;
+    if (error) {
+      throw error;
+    }
+
+    const pageRows = (data ?? []) as ActivityTxRow[];
+    for (const tx of pageRows) {
+      let row = activityMap.get(tx.activity_id);
+      if (!row) {
+        row = {
+          activity_id: tx.activity_id,
+          activity_name: `Activity ${tx.activity_id.slice(0, 8)}`,
+          local_count: 0,
+          foreign_count: 0,
+          total_count: 0,
+          local_total: 0,
+          foreign_total: 0,
+          total_amount: 0,
+        };
+        activityMap.set(tx.activity_id, row);
+      }
+
+      const amt = Number(tx.amount || 0);
+      row.total_count += 1;
+      row.total_amount = Number((row.total_amount + amt).toFixed(2));
+
+      if (tx.price_type === 'local') {
+        row.local_count += 1;
+        row.local_total = Number((row.local_total + amt).toFixed(2));
+      } else {
+        row.foreign_count += 1;
+        row.foreign_total = Number((row.foreign_total + amt).toFixed(2));
+      }
+    }
+
+    if (pageRows.length < ACTIVITY_PAGE_SIZE || (count !== null && offset + pageRows.length >= count)) {
+      break;
+    }
+  }
+
+  const uniqueActivityIds = Array.from(activityMap.keys());
+  if (uniqueActivityIds.length > 0) {
+    const { data: acts, error: actError } = await supabase
+      .from('activities')
+      .select('id, name')
+      .in('id', uniqueActivityIds);
+
+    if (!actError && acts) {
+      for (const act of acts as Array<{ id: string; name: string }>) {
+        const item = activityMap.get(act.id);
+        if (item) {
+          item.activity_name = act.name;
+        }
+      }
+    }
+  }
+
+  return Array.from(activityMap.values()).sort((a, b) => b.total_amount - a.total_amount);
 }
 
 export async function fetchCashierReportData(
