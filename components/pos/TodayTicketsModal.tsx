@@ -17,7 +17,7 @@ type TodayTicketsModalProps = {
   open: boolean;
   onClose: () => void;
   activitiesById: Map<string, Activity>;
-  onSelectTicketToExchange: (transactionId: string) => void;
+  onSelectTicketToExchange: (transactionId: string, ticket?: TodayTicketItem) => void;
 };
 
 function formatCurrency(value: number): string {
@@ -29,11 +29,12 @@ function formatCurrency(value: number): string {
   }).format(value);
 }
 
-function formatTime(timestamp: string): string {
+function formatDateTime(timestamp: string): string {
   return new Intl.DateTimeFormat('en-LK', {
+    month: 'short',
+    day: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
     timeZone: TIMEZONE_COLOMBO,
   }).format(new Date(timestamp));
 }
@@ -46,10 +47,11 @@ export default function TodayTicketsModal({
 }: TodayTicketsModalProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [tickets, setTickets] = useState<TodayTicketItem[]>([]);
+  const [dateRangeText, setDateRangeText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load today's tickets whenever modal opens
+  // Load tickets from 2 days prior to 2 days next to today whenever modal opens
   useEffect(() => {
     if (!open) {
       setSearchTerm('');
@@ -60,7 +62,7 @@ export default function TodayTicketsModal({
     setIsLoading(true);
     setError(null);
 
-    // Compute Colombo today boundaries in local format (YYYY-MM-DD)
+    // Compute Colombo dates: 2 days prior to today up to 2 days next to today
     const now = new Date();
     const formatter = new Intl.DateTimeFormat('en-CA', {
       timeZone: TIMEZONE_COLOMBO,
@@ -68,24 +70,37 @@ export default function TodayTicketsModal({
       month: '2-digit',
       day: '2-digit',
     });
-    const todayDateStr = formatter.format(now); // e.g. "2026-10-12"
+    const todayDateStr = formatter.format(now); // e.g. "2026-11-15"
+    const [year, month, day] = todayDateStr.split('-').map(Number);
 
-    // Fetch transactions with start_date set to today's start
-    // Using start_date with limit=1000 so all today's tickets are retrieved
-    const startIso = `${todayDateStr}T00:00:00+05:30`;
-    const endIso = `${todayDateStr}T23:59:59.999+05:30`;
+    // 2 days prior to today
+    const priorDate = new Date(Date.UTC(year, month - 1, day - 2));
+    const priorDateStr = formatter.format(priorDate);
+
+    // 2 days next to today
+    const nextDate = new Date(Date.UTC(year, month - 1, day + 2));
+    const nextDateStr = formatter.format(nextDate);
+
+    // Day after nextDate for clean half-open boundary: gte(startIso) and lt(endIso)
+    const dayAfterNextDate = new Date(Date.UTC(year, month - 1, day + 3));
+    const dayAfterNextDateStr = formatter.format(dayAfterNextDate);
+
+    setDateRangeText(`${priorDateStr} to ${nextDateStr}`);
+
+    const startIso = `${priorDateStr}T00:00:00+05:30`;
+    const endIso = `${dayAfterNextDateStr}T00:00:00+05:30`;
 
     fetch(`/api/transactions?start_date=${encodeURIComponent(startIso)}&end_date=${encodeURIComponent(endIso)}&limit=1000&include_cancelled=false`)
       .then(async (res) => {
         if (!res.ok) {
-          throw new Error('Failed to load tickets for today');
+          throw new Error('Failed to load tickets for exchange');
         }
         return res.json();
       })
       .then((payload) => {
         if (isMounted) {
           const list: TodayTicketItem[] = payload.data ?? [];
-          // Filter to only tickets bought on that particular date that are currently exchangeable:
+          // Filter to exchangeable tickets within the 5-day window:
           // Active (not cancelled and not exchanged away)
           const exchangeable = list.filter(
             (t) => !t.cancelled_at && !t.exchanged_to_transaction_id
@@ -124,12 +139,17 @@ export default function TodayTicketsModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-6 py-4">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="flex h-3 w-3 rounded-full bg-blue-600 animate-pulse" />
-              <h2 className="text-xl font-bold text-slate-900">Exchange Tickets — Today&apos;s Tickets</h2>
+              <h2 className="text-xl font-bold text-slate-900">Exchange Tickets</h2>
+              {dateRangeText && (
+                <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-800 border border-blue-200">
+                  {dateRangeText} (±2 Days)
+                </span>
+              )}
             </div>
             <p className="mt-0.5 text-xs text-slate-600">
-              Only tickets purchased today are shown. Search in real time by token number to exchange game.
+              Showing tickets bought from 2 days prior to 2 days next to today. Search in real time by token number to exchange game.
             </p>
           </div>
           <button
@@ -166,7 +186,7 @@ export default function TodayTicketsModal({
           <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
             <span>
               Showing <strong className="text-slate-800">{filteredTickets.length}</strong> of{' '}
-              <strong className="text-slate-800">{tickets.length}</strong> active tickets today
+              <strong className="text-slate-800">{tickets.length}</strong> active tickets in range (±2 days)
             </span>
             {searchTerm && (
               <span className="font-medium text-blue-600">Filtering in real time</span>
@@ -179,7 +199,7 @@ export default function TodayTicketsModal({
           {isLoading ? (
             <div className="flex flex-col items-center justify-center py-12 text-slate-500">
               <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent mb-3" />
-              <p className="text-sm font-semibold">Loading today&apos;s tickets...</p>
+              <p className="text-sm font-semibold">Loading tickets in range...</p>
             </div>
           ) : error ? (
             <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-center text-sm font-semibold text-red-600">
@@ -189,12 +209,12 @@ export default function TodayTicketsModal({
             <div className="flex flex-col items-center justify-center py-12 text-slate-500 text-center">
               <div className="mb-2 text-3xl">🎫</div>
               <p className="text-base font-bold text-slate-800">
-                {searchTerm ? 'No matching ticket found' : 'No active tickets found for today'}
+                {searchTerm ? 'No matching ticket found' : 'No active tickets found in date range'}
               </p>
               <p className="text-xs text-slate-500 max-w-sm mt-1">
                 {searchTerm
-                  ? `No ticket matching token "${searchTerm}" was bought today.`
-                  : 'Tickets bought today that are eligible for game exchange will appear here.'}
+                  ? `No ticket matching token "${searchTerm}" was found within ±2 days of today.`
+                  : 'Tickets bought between 2 days prior and 2 days next to today that are eligible for exchange will appear here.'}
               </p>
             </div>
           ) : (
@@ -230,7 +250,7 @@ export default function TodayTicketsModal({
                           {activityName}
                         </p>
                         <p className="text-xs text-slate-500">
-                          Ref: <span className="font-mono">{ticket.txn_reference}</span> • Purchased at {formatTime(ticket.created_at)}
+                          Ref: <span className="font-mono">{ticket.txn_reference}</span> • Purchased: {formatDateTime(ticket.created_at)}
                         </p>
                       </div>
                     </div>
@@ -245,7 +265,7 @@ export default function TodayTicketsModal({
                       <Button
                         type="button"
                         onClick={() => {
-                          onSelectTicketToExchange(ticket.id);
+                          onSelectTicketToExchange(ticket.id, ticket);
                         }}
                         className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl shadow-sm text-xs"
                       >

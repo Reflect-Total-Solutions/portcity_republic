@@ -830,9 +830,9 @@ export default function DashboardPage() {
         open={isTodayTicketsOpen}
         onClose={() => setIsTodayTicketsOpen(false)}
         activitiesById={activityById}
-        onSelectTicketToExchange={(transactionId) => {
+        onSelectTicketToExchange={(transactionId, ticket) => {
           setIsTodayTicketsOpen(false);
-          handleOpenExchangeModal(transactionId);
+          handleOpenExchangeModal(transactionId, ticket);
         }}
       />
 
