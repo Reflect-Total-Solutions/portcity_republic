@@ -15,6 +15,7 @@ import {
   Store,
   LogOut,
   Undo2,
+  DatabaseBackup,
 } from 'lucide-react';
 
 const adminLinks = [
@@ -27,6 +28,7 @@ const adminLinks = [
   { href: '/admin/refund', label: 'Refund', icon: Undo2 },
   { href: '/admin/audit-log', label: 'Audit Log', icon: ClipboardList },
   { href: '/admin/maintenance', label: 'Maintenance', icon: Settings },
+  { href: '/admin/backup', label: 'Backup', icon: DatabaseBackup },
 ];
 
 export default function AdminSidebar() {
